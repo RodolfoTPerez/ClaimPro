@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Hpower PRO | Adaptive Suite v15.0</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root { --accent: #38bdf8; }
+        .theme-ocean { --bg: #0f172a; --glass: rgba(30, 41, 59, 0.7); }
+        body { background: var(--bg); color: white; font-family: 'Inter', sans-serif; overflow-x: hidden; }
+        .glass { background: var(--glass); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.1); }
+        
+        /* RESPONSIVE LAYOUT ENGINE */
+        .view { display: none; min-height: 100vh; padding: 20px; animation: slideUp 0.3s ease-out; }
+        @media (min-width: 1024px) { .view { padding: 40px; } }
+        .view.active { display: block; }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* SIDEBAR LOGIC: DESKTOP VS MOBILE */
+        #sidebar { position: fixed; left: -100%; top: 0; z-index: 1000; transition: 0.4s cubic-bezier(0.4, 0, 0.2, 1); width: 280px; height: 100vh; }
+        #sidebar.open { left: 0; }
+        .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 900; }
+        .overlay.active { display: block; }
+        
+        @media (min-width: 1024px) {
+            #sidebar { position: fixed; left: 0; width: 300px; border-right: 1px solid rgba(255,255,255,0.1); }
+            main { margin-left: 300px; }
+            #mobile-nav { display: none; }
+            .overlay { display: none !important; }
+        }
+
+        /* INPUTS & BUTTONS */
+        input, textarea, select { background: rgba(0,0,0,0.4) !important; border: 1px solid rgba(255,255,255,0.1) !important; color: white !important; outline: none; padding: 1rem !important; font-size: 16px !important; border-radius: 1rem !important; width: 100%; }
+        input:focus { border-color: var(--accent) !important; }
+        .sidebar-item { transition: 0.3s; cursor: pointer; border-radius: 12px; font-weight: 700; margin-bottom: 8px; }
+        .sidebar-item.active { background: var(--accent); color: black; }
+
+        /* TOASTS */
+        #toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 2000; display: flex; flex-direction: column; gap: 10px; }
+        .toast { background: rgba(0,0,0,0.9); border-left: 4px solid var(--accent); color: white; padding: 15px 25px; border-radius: 12px; font-size: 14px; animation: slideIn 0.3s ease; box-shadow: 0 10px 20px rgba(0,0,0,0.5); }
+        @keyframes slideIn { from { transform: translateX(120%); } to { transform: translateX(0); } }
+
+        /* PRINT CLEANUP */
+        @media print {
+            body * { visibility: hidden !important; }
+            #reportModal, #reportModal *, #reportSheet, #reportSheet * { visibility: visible !important; }
+            #reportModal { position: absolute; left: 0; top: 0; width: 100%; display: block !important; padding: 0 !important; background: white !important; }
+            .modal-content { box-shadow: none !important; border: none !important; width: 100% !important; padding: 20px !important; color: black !important; }
+            .no-print { display: none !important; }
+        }
+    </style>
+</head>
+<body class="theme-ocean">
+
+    <div id="toast-container"></div>
+    <div id="overlay" class="overlay" onclick="toggleMenu()"></div>
+
+    <header id="mobile-nav" class="glass sticky top-0 z-[800] p-4 flex justify-between items-center no-print">
+        <h1 class="text-xl font-black italic text-sky-400">Hpower PRO</h1>
+        <button onclick="toggleMenu()" class="text-3xl">☰</button>
+    </header>
+
+    <aside id="sidebar" class="glass flex flex-col p-8 no-print">
+        <div class="mb-10">
+            <h1 class="text-4xl font-black italic tracking-tighter uppercase text-sky-400">Hpower PRO</h1>
+            <p class="text-[10px] text-gray-500 font-bold tracking-[0.3em] mt-2">FLEET CONTROL</p>
+        </div>
+
+        <nav class="flex-1">
+            <div onclick="showView('dashboard')" class="sidebar-item p-4 active flex items-center gap-3" id="btn-dashboard">📊 Analytics</div>
+            <div onclick="prepareNewClaim()" class="sidebar-item p-4 flex items-center gap-3" id="btn-claim">📝 Add / Edit Claim</div>
+            <div onclick="showView('list')" class="sidebar-item p-4 flex items-center gap-3" id="btn-list">📋 Management List</div>
+        </nav>
+
+        <div class="pt-6 border-t border-white/10">
+            <p class="text-[10px] text-gray-500 font-bold uppercase tracking-widest text-center">Rodolfo | Surgical Edition</p>
+        </div>
+    </aside>
+
+    <main>
+        
+        <section id="view-dashboard" class="view active">
+            <h2 class="text-4xl lg:text-6xl font-black italic uppercase mb-10">Dashboard</h2>
+            
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-8 mb-10">
+                <div class="glass p-6 lg:p-10 rounded-[2.5rem] border-b-8 border-sky-400 text-center">
+                    <p class="text-[10px] font-black text-gray-400 uppercase">Pending</p>
+                    <h3 id="dash-pending" class="text-3xl lg:text-6xl font-black mt-2">0</h3>
+                </div>
+                <div class="glass p-6 lg:p-10 rounded-[2.5rem] border-b-8 border-green-500 text-center">
+                    <p class="text-[10px] font-black text-gray-400 uppercase">Paid Cases</p>
+                    <h3 id="dash-paid-count" class="text-3xl lg:text-6xl font-black mt-2 text-green-400">0</h3>
+                </div>
+                <div class="glass p-6 lg:p-10 rounded-[2.5rem] border-b-8 border-yellow-500 text-center">
+                    <p class="text-[10px] font-black text-gray-400 uppercase">Recovered</p>
+                    <h3 id="dash-paid-sum" class="text-xl lg:text-4xl font-black mt-2">$0</h3>
+                </div>
+                <div class="glass p-6 lg:p-10 rounded-[2.5rem] border-b-8 border-purple-500 text-center">
+                    <p class="text-[10px] font-black text-gray-400 uppercase">Total Cases</p>
+                    <h3 id="dash-total" class="text-3xl lg:text-6xl font-black mt-2">0</h3>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div class="glass p-8 rounded-[3rem] flex flex-col items-center"><canvas id="chartLoc" class="max-h-72 w-full"></canvas></div>
+                <div class="glass p-8 rounded-[3rem] flex flex-col items-center"><canvas id="chartStatus" class="max-h-72 w-full"></canvas></div>
+            </div>
+        </section>
+
+        <section id="view-claim" class="view">
+            <h2 id="form-title" class="text-4xl lg:text-6xl font-black italic uppercase mb-10">Registry</h2>
+            <form id="claimForm" class="grid grid-cols-1 lg:grid-cols-2 gap-8 pb-32">
+                <input type="hidden" id="claim-id">
+                
+                <div class="glass p-8 lg:p-12 rounded-[3rem] space-y-6">
+                    <h4 class="text-sky-400 font-black text-xs uppercase">Area 1: Contract & Location</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <input type="text" id="contrato" placeholder="Contract #" required>
+                        <select id="location" required>
+                            <option value="">-- City --</option>
+                            <option value="Miami">Miami</option>
+                            <option value="Charlotte">Charlotte</option>
+                            <option value="Nashville">Nashville</option>
+                        </select>
+                    </div>
+                    <input type="text" id="rentador" placeholder="Client Name" required>
+                    <input type="date" id="fecha_incidente" required>
+                    <textarea id="descripcion" rows="3" placeholder="Technical investigation details..."></textarea>
+                </div>
+
+                <div class="glass p-8 lg:p-12 rounded-[3rem] space-y-6">
+                    <h4 class="text-sky-400 font-black text-xs uppercase">Area 2: Asset & Finance</h4>
+                    <input type="text" id="vin" placeholder="VIN Number">
+                    <div class="grid grid-cols-3 gap-2">
+                        <input type="text" id="marca" placeholder="Make">
+                        <input type="text" id="modelo" placeholder="Model">
+                        <input type="number" id="ano" placeholder="Year">
+                    </div>
+                    <div class="grid grid-cols-2 gap-6 mt-4">
+                        <select id="status" class="font-black text-sky-400">
+                            <option value="Pendiente">PENDING</option>
+                            <option value="Pagado">PAID</option>
+                        </select>
+                        <input type="number" id="estimado" placeholder="Amount ($)">
+                    </div>
+                </div>
+
+                <div class="glass p-8 lg:p-12 rounded-[3rem] space-y-6">
+                    <h4 class="text-sky-400 font-black text-xs uppercase">Area 3: Correspondence Log</h4>
+                    <textarea id="nuevo_gmail" rows="4" placeholder="Paste email content here..."></textarea>
+                    <button type="button" onclick="addGmail()" class="w-full bg-white/10 p-5 rounded-2xl text-xs font-black uppercase hover:bg-sky-500 hover:text-black transition">+ Add to History</button>
+                    <div id="gmailLog" class="max-h-52 overflow-y-auto space-y-3 mt-4"></div>
+                </div>
+
+                <div class="glass p-8 lg:p-12 rounded-[3rem] space-y-6">
+                    <h4 class="text-sky-400 font-black text-xs uppercase">Area 4: Digital Evidence</h4>
+                    <input type="file" id="fotos_input" multiple class="hidden" onchange="previewImages(this.files)">
+                    <label for="fotos_input" class="block border-4 border-dashed border-white/10 p-12 lg:p-16 rounded-[2.5rem] text-center cursor-pointer hover:bg-white/5 transition">
+                        <span class="text-5xl">📸</span>
+                        <p class="text-xs font-black uppercase mt-4 text-gray-500">Upload to Storage</p>
+                    </label>
+                    <div id="preview" class="grid grid-cols-3 md:grid-cols-4 gap-4 mt-6"></div>
+                </div>
+
+                <button type="submit" id="btnSave" class="lg:col-span-2 bg-sky-500 hover:bg-sky-400 text-black font-black py-8 rounded-[3rem] shadow-2xl uppercase tracking-[0.4em] transition-all text-xl">Sync to Hpower Cloud</button>
+            </form>
+        </section>
+
+        <section id="view-list" class="view">
+            <header class="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-10">
+                <h2 class="text-4xl lg:text-6xl font-black italic uppercase text-sky-400">Claims List</h2>
+                <input type="text" id="search" placeholder="Search..." onkeyup="filterClaims()" class="md:w-[450px]">
+            </header>
+            <div class="glass rounded-[3rem] overflow-x-auto">
+                <table class="w-full text-left min-w-[800px]">
+                    <thead class="bg-white/5 text-[11px] font-black uppercase text-sky-400 tracking-widest">
+                        <tr><th class="p-10">Contract / Client</th><th class="p-10">Location</th><th>Unit</th><th>Status</th><th>Amount</th><th class="text-right p-10">Actions</th></tr>
+                    </thead>
+                    <tbody id="claimTableBody" class="text-sm"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <div id="linksModal">
+        <div class="modal-content">
+            <h2 class="text-3xl font-black mb-8 uppercase italic text-sky-500">Evidence Links</h2>
+            <div id="linksList" class="space-y-4 font-mono text-[10px] break-all bg-gray-50 p-6 rounded-3xl border"></div>
+            <button onclick="document.getElementById('linksModal').style.display='none'" class="mt-8 w-full bg-black text-white py-6 rounded-2xl font-black uppercase">Close Window</button>
+        </div>
+    </div>
+    
+    <div id="reportModal">
+        <div class="max-w-[900px] mx-auto flex justify-end gap-4 mb-8 no-print">
+            <button onclick="document.getElementById('reportModal').style.display='none'" class="bg-red-500 text-white px-8 py-3 rounded-2xl font-black uppercase text-xs">Cerrar</button>
+            <button onclick="window.print()" class="bg-sky-500 text-black px-8 py-3 rounded-2xl font-black uppercase text-xs">Print PDF</button>
+        </div>
+        <div id="reportSheet" class="modal-content !text-black !bg-white"></div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = "https://tvrvazripqfatkkisijq.supabase.co";
+        const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR2cnZhenJpcHFmYXRra2lzaWpxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIxNDI4NTUsImV4cCI6MjA4NzcxODg1NX0.pVf0LO0_t8_6w_WhGa4wFhiFeDUDZjEsDpnSyliZKp4";
+        const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        let activeLogs = []; let allClaims = []; let tempFiles = []; let currentPhotos = []; let locChart, statusChart;
+
+        function toggleMenu() { 
+            document.getElementById('sidebar').classList.toggle('open'); 
+            document.getElementById('overlay').classList.toggle('active');
+        }
+
+        function showToast(m, err=false) { 
+            const c = document.getElementById('toast-container'); 
+            const t = document.createElement('div'); 
+            t.className = 'toast'; 
+            if(err) t.style.borderLeftColor = "#ef4444"; 
+            t.innerText = m; 
+            c.appendChild(t); 
+            setTimeout(() => t.remove(), 4500); 
+        }
+
+        function showView(n) {
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+            document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+            document.getElementById(`view-${n}`).classList.add('active');
+            document.getElementById(`btn-${n}`).classList.add('active');
+            if(window.innerWidth < 1024) { document.getElementById('sidebar').classList.remove('open'); document.getElementById('overlay').classList.remove('active'); }
+            if(n === 'dashboard') updateDashboard();
+            if(n === 'list') fetchClaims();
+        }
+
+        function prepareNewClaim() { 
+            resetForm(); 
+            document.getElementById('form-title').innerText = "Registry";
+            showView('claim'); 
+        }
+
+        async function updateDashboard() {
+            let { data } = await _supabase.from('reclamos').select('*');
+            if(!data) return;
+            const pending = data.filter(c => c.status === 'Pendiente');
+            const paid = data.filter(c => c.status === 'Pagado');
+            document.getElementById('dash-pending').innerText = pending.length;
+            document.getElementById('dash-paid-count').innerText = paid.length;
+            document.getElementById('dash-paid-sum').innerText = `$${paid.reduce((sum,c) => sum+(Number(c.estimado)||0),0).toLocaleString()}`;
+            document.getElementById('dash-total').innerText = data.length;
+            const ld = data.reduce((acc, c) => { if(c.location) acc[c.location] = (acc[c.location] || 0) + 1; return acc; }, {});
+            if(locChart) locChart.destroy(); if(statusChart) statusChart.destroy();
+            locChart = new Chart(document.getElementById('chartLoc'), { type: 'pie', data: { labels: Object.keys(ld), datasets: [{ data: Object.values(ld), backgroundColor: ['#38bdf8', '#818cf8', '#fbbf24'] }] }, options: { plugins: { legend: { position: 'bottom', labels: { color: '#fff' } } } } });
+            statusChart = new Chart(document.getElementById('chartStatus'), { type: 'bar', data: { labels: ['Pending', 'Paid'], datasets: [{ data: [pending.length, paid.length], backgroundColor: ['#ef4444', '#22c55e'] }] }, options: { plugins: { legend: { display: false }, scales: { y: { ticks: { color: '#fff' } }, x: { ticks: { color: '#fff' } } } } } });
+        }
+
+        function addGmail() { const v = document.getElementById('nuevo_gmail').value; if(!v) return; activeLogs.unshift({ date: new Date().toLocaleString(), text: v }); document.getElementById('nuevo_gmail').value = ""; renderLogs(); }
+        function renderLogs() { document.getElementById('gmailLog').innerHTML = activeLogs.map(l => `<div class="text-[9px] bg-white/5 p-4 rounded-xl border-l-4 border-sky-400 mb-2 font-bold">${l.date}: ${l.text.substring(0,140)}...</div>`).join(''); }
+        function previewImages(f) { tempFiles = Array.from(f); document.getElementById('preview').innerHTML = tempFiles.map(i => `<img src="${URL.createObjectURL(i)}" class="h-16 w-full object-cover rounded-xl border border-white/10">`).join(''); }
+
+        document.getElementById('claimForm').addEventListener('submit', async (e) => {
+            e.preventDefault(); 
+            const btn = document.getElementById('btnSave'); 
+            const id = document.getElementById('claim-id').value;
+            const contratoVal = document.getElementById('contrato').value;
+            
+            const { data: existing } = await _supabase.from('reclamos').select('id').eq('contrato', contratoVal).maybeSingle();
+            if(existing && existing.id !== id) { showToast(`ERROR: Contract #${contratoVal} is in use.`, true); return; }
+
+            btn.innerText = "SYNCING..."; showToast("Processing Cloud Upload...");
+            let newUrls = [];
+            for (let f of tempFiles) {
+                const path = `claims/${Date.now()}_${f.name}`;
+                const { data } = await _supabase.storage.from('evidencia-claims').upload(path, f);
+                if(data) { newUrls.push(_supabase.storage.from('evidencia-claims').getPublicUrl(path).data.publicUrl); }
+            }
+
+            const payload = {
+                rentador: document.getElementById('rentador').value, contrato: contratoVal,
+                location: document.getElementById('location').value, fecha_incidente: document.getElementById('fecha_incidente').value,
+                descripcion: document.getElementById('descripcion').value, vin: document.getElementById('vin').value,
+                marca: document.getElementById('marca').value, modelo: document.getElementById('modelo').value,
+                ano: Number(document.getElementById('ano').value), status: document.getElementById('status').value,
+                estimado: Number(document.getElementById('estimado').value) || 0,
+                historial_gmail: activeLogs, fotos: [...currentPhotos, ...newUrls]
+            };
+
+            const { error: dbErr } = id ? await _supabase.from('reclamos').update(payload).eq('id', id) : await _supabase.from('reclamos').insert([payload]);
+            if(dbErr) alert(dbErr.message); 
+            else { showToast("Sincronización Exitosa"); resetForm(); showView('list'); }
+            btn.innerText = "Synchronize to Hpower Cloud";
+        });
+
+        async function fetchClaims() { const { data } = await _supabase.from('reclamos').select('*').order('created_at', {ascending: false}); allClaims = data || []; renderTable(allClaims); }
+        function renderTable(d) {
+            document.getElementById('claimTableBody').innerHTML = d.map(c => `
+                <tr class="border-b border-white/5 hover:bg-white/10 transition">
+                    <td class="p-10 font-black italic text-sky-400"># ${c.contrato}<br><span class="text-white font-bold not-italic text-sm">${c.rentador}</span></td>
+                    <td class="p-10 font-bold uppercase text-[10px] tracking-widest text-gray-400">${c.location}</td>
+                    <td>${c.marca} ${c.modelo}<br><small class="text-gray-500 font-bold">${c.vin || 'NO VIN'}</small></td>
+                    <td><span class="px-5 py-2 rounded-full text-[10px] font-black uppercase ${c.status === 'Pagado' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}">${c.status}</span></td>
+                    <td class="font-mono text-xs text-sky-400">$${(Number(c.estimado)||0).toLocaleString()}</td>
+                    <td class="p-10 text-right space-x-3">
+                        <button onclick="showLinks('${c.id}')" class="bg-purple-600 text-white px-5 py-2 rounded-2xl text-[10px] font-black uppercase">Links</button>
+                        <button onclick="editClaim('${c.id}')" class="bg-sky-500/20 text-sky-400 px-5 py-2 rounded-2xl text-[10px] font-black uppercase">Edit</button>
+                        <button onclick="openReport('${c.id}')" class="bg-sky-500 text-black px-5 py-2 rounded-2xl text-[10px] font-black uppercase">Report</button>
+                    </td>
+                </tr>`).join('');
+        }
+
+        function filterClaims() { const t = document.getElementById('search').value.toLowerCase(); renderTable(allClaims.filter(c => c.rentador.toLowerCase().includes(t) || (c.vin && c.vin.toLowerCase().includes(t)) || c.contrato.toLowerCase().includes(t))); }
+
+        function editClaim(id) {
+            const c = allClaims.find(x => x.id === id);
+            document.getElementById('claim-id').value = c.id; document.getElementById('rentador').value = c.rentador;
+            document.getElementById('contrato').value = c.contrato; document.getElementById('location').value = c.location;
+            document.getElementById('fecha_incidente').value = c.fecha_incidente ? c.fecha_incidente.substring(0,10) : "";
+            document.getElementById('descripcion').value = c.descripcion; document.getElementById('vin').value = c.vin;
+            document.getElementById('marca').value = c.marca; document.getElementById('modelo').value = c.modelo;
+            document.getElementById('ano').value = c.ano; document.getElementById('status').value = c.status;
+            document.getElementById('estimado').value = c.estimado;
+            activeLogs = c.historial_gmail || []; currentPhotos = c.fotos || [];
+            renderLogs(); document.getElementById('form-title').innerText = "Edit Incident"; showView('claim');
+        }
+
+        function showLinks(id) { const c = allClaims.find(x => x.id === id); const u = c.fotos || []; document.getElementById('linksList').innerHTML = u.length > 0 ? u.map(i => `<div class="p-3 bg-white rounded-xl mb-2 select-all text-[9px] border break-all text-black">${i}</div>`).join('') : "No links."; document.getElementById('linksModal').style.display = 'block'; }
+
+        function openReport(id) {
+            const c = allClaims.find(x => x.id === id); if(!c) return;
+            const fH = (c.fotos || []).map(u => `<img src="${u}" style="width:100%; border-radius:30px; margin-bottom:20px; border:1px solid #eee;">`).join('');
+            document.getElementById('reportSheet').innerHTML = `
+                <div style="display:flex; justify-content:space-between; align-items:flex-end; border-bottom:8px solid #000; padding-bottom:30px; margin-bottom:40px;">
+                    <div><h1 style="font-size:45px; font-weight:900; italic; margin:0;">Hpower <span style="color:#38bdf8">CLAIMS</span></h1><p style="font-size:12px; font-weight:bold; uppercase; letter-spacing:3px;">Official Incident & Risk Report</p></div>
+                    <div style="text-align:right; font-size:12px;"><b>LOCATION:</b> ${c.location.toUpperCase()}<br><b>RECORD ID:</b> ${c.id.substring(0,8)}</div>
+                </div>
+                <div style="background:#000; color:#fff; padding:15px 30px; font-size:18px; font-weight:900; text-transform:uppercase; margin-bottom:30px;">Investigation Report</div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:60px; font-size:14px; margin-bottom:40px;">
+                    <div><b>CLIENT:</b> ${c.rentador}<br><b>CONTRACT:</b> ${c.contrato}<br><b>INCIDENT DATE:</b> ${c.fecha_incidente}</div>
+                    <div><b>VIN:</b> ${c.vin}<br><b>VEHICLE:</b> ${c.marca} ${c.modelo} (${c.ano})</div>
+                </div>
+                <div style="margin-bottom:40px;"><b>TECHNICAL DESCRIPTION (EDITABLE):</b><div contenteditable="true" style="padding:25px; background:#f8f8f8; border-left:8px solid #38bdf8; font-style:italic; margin-top:15px; font-size:16px;">[TRANSLATE TO ENGLISH]: ${c.descripcion}</div></div>
+                <div><b>LOGS & EVIDENCE:</b><div style="font-size:11px; margin-bottom:20px;">${(c.historial_gmail || []).map(l => `<p><b>[${l.date}]</b>: ${l.text}</p>`).join('')}</div><div style="margin-top:25px;">${fH || 'No photographic record attached.'}</div></div>
+            `;
+            document.getElementById('reportModal').style.display = 'block';
+        }
+
+        function resetForm() { document.getElementById('claimForm').reset(); document.getElementById('claim-id').value = ""; activeLogs = []; tempFiles = []; currentPhotos = []; document.getElementById('gmailLog').innerHTML = ""; document.getElementById('preview').innerHTML = ""; }
+        window.onload = () => showView('dashboard');
+    </script>
+</body>
+</html>
